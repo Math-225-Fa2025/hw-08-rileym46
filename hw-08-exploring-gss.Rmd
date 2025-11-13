@@ -1,5 +1,6 @@
 ---
 title: "HW 08 - Exploring the GSS"
+author: "Riley Martindale"
 output: 
   tufte::tufte_html:
     css: ../lab.css
@@ -15,7 +16,7 @@ link-citations: true
 
 ```{r include = FALSE}
 knitr::opts_chunk$set(
-  eval = FALSE,
+  eval = TRUE,
   out.width = "80%",
   fig.asp = 0.618,
   fig.width = 10,
@@ -56,8 +57,12 @@ These packages are already installed for you.
 You can load them by running the following in your Console:
 
 ```{r load-packages, message = FALSE, eval = TRUE}
+devtools::install_github("tidyverse/dsbox/tidymodels")
 library(tidyverse)
 library(dsbox)
+library(parsnip)
+library(broom)
+library(ggplot2)
 ```
 
 ## Data
@@ -80,8 +85,16 @@ Answers to this question are stored in the `harass5` variable in our dataset.
 
 1.  What are the possible responses to this question and how many respondents chose each of these answers?
 
+```{r yes-no-NA}
+gss16 %>%
+  count(harass5)
+```
+`The possible answers are yes, no, and does not apply. 237 people answered yes. 1136 answered no. 96 people answered "Does not apply (i do not have a job/superior/co-worker". The sample size is 2867, so we know that 1398 people did not answer (NA).`
+
 2.  What percent of the respondents for whom this question is applicable\
     (i.e. excluding `NA`s and `Does not apply`s) have been harassed by their superiors or co-workers at their job.
+    
+    `20.86% of people have been harassed by their superior or co-workers. That means that 79.14% of people has NOT been harassed by their superiors or co-workers.`
 
 Knit, *commit, and push your changes to GitHub with an appropriate commit message. Make sure to commit and push all changed files so that your Git pane is cleared up afterwards.*
 
@@ -93,25 +106,93 @@ For example, if the response is 2.5 hrs, this would be recorded as `emailhr = 2`
 
 3.  Create a new variable called `email` that combines these two variables to reports the number of minutes the respondents spend on email weekly.
 
+```{r email}
+gss16 <- gss16 %>%
+  mutate(email = ((emailhr * 60) + emailmin))
+```
+  
 4.  Visualize the distribution of this new variable.
     Find the mean and the median number of minutes respondents spend on email weekly.
     Is the mean or the median a better measure of the typical among of time Americans spend on email weekly?
     Why?
+    
+```{r email-hist}
+gss16 %>%
+  ggplot(aes(x = email)) +
+  geom_histogram(binwidth = 60) +
+  labs(x = "Time spent on email (in minutes)")
+
+summary(gss16$email)
+```
+
+`The mean is 416.8 minutes. The median is 120.0. The median is a better measure of how often an American spend on email. The mean could be offset by outliers - people who spend a much larger or smaller amount of time emailing.`
+
 
 5.  Create another new variable, `snap_insta` that is coded as "Yes" if the respondent reported using any of Snapchat (`snapchat`) or Instagram (`instagrm`), and "No" if not.
     If the recorded value was `NA` for both of these questions, the value in your new variable should also be `NA`.
+    
+```{r snap-insta}
+gss16 <- gss16 %>%
+  mutate(snap_insta = ifelse(
+  !is.na(gss16$snapchat) & gss16$snapchat == "Yes" | 
+  !is.na(gss16$instagrm) & gss16$instagrm == "Yes", 
+  "Yes", 
+  ifelse(
+    is.na(gss16$snapchat) & is.na(gss16$instagrm), 
+    NA, 
+    "No"
+  )
+  )
+)
+```
 
 6.  Calculate the percentage of Yes's for `snap_insta` among those who answered the question, i.e. excluding `NA`s.
+```{r percents}
+yes_snap_insta <- sum(gss16$snap_insta == "Yes", na.rm = TRUE)
+print(yes_snap_insta)
+no_snap_insta <- sum(gss16$snap_insta == "No", na.rm = TRUE)
+print(no_snap_insta)
+```
+`1372 people voted either yes or no in using either Snapchat or Instagram. That means that 37.46% use Snapchat or Instagram. 62.54% do not.`
 
 7.  What are the possible responses to the question *Last week were you working full time, part time, going to school, keeping house, or what?* and how many respondents chose each of these answers?
     Note that this information is stored in the `wrkstat` variable.
+```{r count}
+gss16 %>%
+  count(wrkstat)
+```
 
 8.  Fit a model predicting `email` (number of minutes per week spent on email) from `educ` (number of years of education), `wrkstat`, and `snap_insta`.
     Interpret the slopes for each of these variables.
+```{r logical}
+email_fit <- linear_reg() %>%
+  set_engine("lm") %>%
+  fit(email ~ educ  + wrkstat + snap_insta, data = gss16)
+tidy(email_fit)
+```
+`The intercept is -229.74, which means that when every other variable is 0, the average number of emails sent is -229.74. As the number of time educated increases, the number of emails sent increases by 29.63 on average. The work status also affects how many emails are sent. Those who are working full time are sending a lot more emails than other (366.84, on average). People who are students or not working are sending less emails (-123.81 and -73.71, respectively).` 
 
 9.  Create a predicted values vs. residuals plot for this model.
     Are there any issues with the model?
     If yes, describe them.
+```{r plot}
+email_fit <- linear_reg() %>%
+  set_engine("lm") %>%
+  fit(email ~ educ  + wrkstat + snap_insta, data = gss16)
+
+email_fit_avg <- augment(email_fit$fit)
+
+email_fit_avg %>%
+  ggplot(aes(x = .fitted, y = .resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, col = "red", lty = 2) +
+  labs(
+    title = "Predicted Values vs. Residuals Plot",
+       x = "Predicted Values",
+       y = "Residuals"
+  )
+```
+`There are issues with the model. It does not look scattered enough. There is still a clear descending line and clusters.`
 
 Knit, *commit, and push your changes to GitHub with an appropriate commit message. Make sure to commit and push all changed files so that your Git pane is cleared up afterwards.*
 
@@ -142,12 +223,48 @@ Responses that were originally Don't know, No answer and Not applicable are alre
     The remaining levels can be left as is.
     Don't overwrite the existing `advfront`, instead pick a different, informative name for your new variable.
 
+```{r adv_edit}
+gss16 <- gss16 %>%
+  mutate(adv_edit = case_when(
+  advfront %in% c("Strongly Agree", "Agree") ~ "Yes",
+  advfront %in% c("Disagree", "Strongly disagree") ~ "No",
+  TRUE ~ advfront 
+  )
+)
+gss16$adv_edit <- as.factor(gss16$adv_edit)
+```
+
 11. In a new variable, recode `polviews` such that Extremely liberal, Liberal, and Slightly liberal, are mapped to `"Liberal"`, and Slghtly conservative, Conservative, and Extrmly conservative disagree are mapped to `"Conservative"`.
     The remaining levels can be left as is.
     Make sure that the levels are in a reasonable order.
     Don't overwrite the existing `polviews`, instead pick a different, informative name for your new variable.
 
+```{r polviews_edit}
+gss16 <- gss16 %>%
+  mutate(polviews_edit = case_when(
+  polviews %in% c("Extremely liberal", "Liberal", "Slightly liberal") ~ "Liberal",
+  polviews %in% c("Slghtly conservative", "Conservative", "Extrmly conservative") ~ "Conservative",
+  TRUE ~ polviews 
+  )
+)
+gss16$polviews_edit <- as.factor(gss16$polviews_edit)
+```
+
 12. Create a visualization that displays the relationship between these two new variables and interpret it.
+
+```{r graph-polviews}
+gss16 %>%
+  ggplot(aes(x = polviews_edit, color = adv_edit, fill = adv_edit)) +
+  geom_bar()+
+  labs(
+    title = "Political Views vs Science Research",
+    x = "Political Views",
+    y = "Count",
+    color = "Scientific Views",
+    fill = "Scientific Views"
+  )
+```
+`From this graph, we can see how political views tend to align with the belief that science research is necessary and should be supported by the federal government. People that are conservative tend to vote no. People that are liberal tend to vote yes. Those that are moderate answered more NA than other columns, but also leaned towards yes.`
 
 Knit, *commit, and push your changes to GitHub with an appropriate commit message. Make sure to commit and push all changed files so that your Git pane is cleared up afterwards and review the md document on GitHub to make sure you're happy with the final state of your work.*
 
